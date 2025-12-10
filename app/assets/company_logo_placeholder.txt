@@ -1,0 +1,1 @@
+Replace this file with your company logo image, e.g. logo.png, and update LOGO_PATH accordingly.
