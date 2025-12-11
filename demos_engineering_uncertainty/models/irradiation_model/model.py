@@ -19,6 +19,11 @@ def get_geometry_uncertainties():
         "exposure_time": 0.02,
     }
 
+
+def get_epistemic_fraction():
+    # Multiplicative epistemic uncertainty applied uniformly across each sample
+    return 0.1
+
 def evaluate(flux_avg, geom=None):
     if geom is None:
         geom = get_default_geometry()
@@ -54,9 +59,11 @@ def sample_model(inputs, n_samples=1, geom=None, rng=None):
     flux_avg = np.atleast_1d(flux_avg)
     n_points = flux_avg.shape[0]
     uncertainties = get_geometry_uncertainties()
+    epistemic_frac = get_epistemic_fraction()
 
     all_samples = np.empty((n_points, n_samples))
     for i in range(n_samples):
         perturbed = _perturb_geom(geom, uncertainties, n_points, rng)
-        all_samples[:, i] = evaluate(flux_avg, geom=perturbed)
+        epistemic_factor = 1.0 + rng.normal(0.0, epistemic_frac)
+        all_samples[:, i] = evaluate(flux_avg, geom=perturbed) * epistemic_factor
     return all_samples

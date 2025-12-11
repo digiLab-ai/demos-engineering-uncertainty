@@ -3,7 +3,8 @@ import pandas as pd
 from pathlib import Path
 from . import model
 
-def generate_datasets(output_root: str = "data/yield_strength", n_train: int = 300, n_val: int = 80, seed: int = 999):
+
+def generate_datasets(output_root: str = "data/yield_strength", n_train: int = 60, n_val: int = 15, seed: int = 999):
     rng = np.random.default_rng(seed)
     output_root = Path(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
@@ -23,11 +24,11 @@ def generate_datasets(output_root: str = "data/yield_strength", n_train: int = 3
         "dpa": dpa_val
     })
 
-    sigma_train = model.sample_model({"temperature": T_train, "dpa": dpa_train}, n_samples=1, rng=rng)[:, 0]
-    sigma_val = model.sample_model({"temperature": T_val, "dpa": dpa_val}, n_samples=1, rng=rng)[:, 0]
+    failure_train = model.sample_model({"temperature": T_train, "dpa": dpa_train}, n_samples=1, rng=rng)[:, 0]
+    failure_val = model.sample_model({"temperature": T_val, "dpa": dpa_val}, n_samples=1, rng=rng)[:, 0]
 
-    train_outputs = pd.DataFrame({"yield_strength": sigma_train})
-    val_outputs = pd.DataFrame({"yield_strength": sigma_val})
+    train_outputs = pd.DataFrame({"failure": failure_train})
+    val_outputs = pd.DataFrame({"failure": failure_val})
 
     train_inputs.to_csv(output_root / "train_inputs.csv", index=False)
     val_inputs.to_csv(output_root / "val_inputs.csv", index=False)

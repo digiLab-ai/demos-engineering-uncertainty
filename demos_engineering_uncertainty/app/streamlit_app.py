@@ -18,6 +18,7 @@ from models.irradiation_model import model as irr_model
 from models.yield_strength_model import model as ys_model
 
 TARGET_POINTS = 20
+YIELD_POINTS = 9
 TRAIN_FRACTION = 0.8
 
 
@@ -81,8 +82,8 @@ def run_irradiation_sweep():
 
 def run_yield_strength_sweep():
     rng = np.random.default_rng()
-    n_temp = int(np.ceil(np.sqrt(TARGET_POINTS)))
-    n_dpa = int(np.ceil(TARGET_POINTS / n_temp))
+    n_temp = int(np.ceil(np.sqrt(YIELD_POINTS)))
+    n_dpa = int(np.ceil(YIELD_POINTS / n_temp))
 
     temp_values = np.linspace(300.0, 1200.0, n_temp)
     dpa_values = np.linspace(0.0, 5.0, n_dpa)
@@ -97,10 +98,29 @@ def run_yield_strength_sweep():
     )[:, 0]
 
     inputs_df = pd.DataFrame({"temperature": T_flat, "dpa": dpa_flat})
-    outputs_df = pd.DataFrame({"yield_strength": samples})
+    outputs_df = pd.DataFrame({"failure": samples.astype(bool)})
     train_inputs, val_inputs, train_outputs, val_outputs = _split_train_val(inputs_df, outputs_df, rng)
     _write_dataset(ROOT / "data" / "yield_strength", train_inputs, val_inputs, train_outputs, val_outputs)
     return train_inputs, val_inputs, train_outputs, val_outputs
+
+
+def _store_sweep(key, sweep_tuple):
+    train_inputs, val_inputs, train_outputs, val_outputs = sweep_tuple
+    st.session_state[key] = {
+        "train_inputs": train_inputs,
+        "val_inputs": val_inputs,
+        "train_outputs": train_outputs,
+        "val_outputs": val_outputs,
+    }
+
+
+def _ensure_precomputed_sweeps():
+    if "temp_sweep" not in st.session_state:
+        _store_sweep("temp_sweep", run_temperature_sweep())
+    if "irr_sweep" not in st.session_state:
+        _store_sweep("irr_sweep", run_irradiation_sweep())
+    if "ys_sweep" not in st.session_state:
+        _store_sweep("ys_sweep", run_yield_strength_sweep())
 
 
 def _render_sweep_results(label_prefix, state_key):
@@ -114,10 +134,10 @@ def _render_sweep_results(label_prefix, state_key):
     val_outputs = sweep["val_outputs"]
 
     st.success(f"Generated {len(train_inputs)} train / {len(val_inputs)} validation samples.")
-    st.caption("Train preview")
-    st.dataframe(pd.concat([train_inputs, train_outputs], axis=1), use_container_width=True)
-    st.caption("Validation preview")
-    st.dataframe(pd.concat([val_inputs, val_outputs], axis=1), use_container_width=True)
+    with st.expander("Train preview"):
+        st.dataframe(pd.concat([train_inputs, train_outputs], axis=1), use_container_width=True)
+    with st.expander("Validation preview"):
+        st.dataframe(pd.concat([val_inputs, val_outputs], axis=1), use_container_width=True)
 
     st.markdown("#### Download CSVs")
     downloads = {
@@ -145,6 +165,7 @@ def _render_sweep_results(label_prefix, state_key):
     val_df = pd.concat([val_inputs, val_outputs], axis=1)
     val_df["split"] = "validation"
     all_df = pd.concat([train_df, val_df], ignore_index=True)
+    is_bool_output = pd.api.types.is_bool_dtype(all_df[output_col])
 
     if len(input_cols) == 1:
         x_col = input_cols[0]
@@ -154,19 +175,20 @@ def _render_sweep_results(label_prefix, state_key):
             .encode(
                 x=alt.X(x_col, title=x_col),
                 y=alt.Y(output_col, title=output_col),
-                color=alt.Color("split", title="split"),
+                color=alt.Color(f"{output_col}:N", title=output_col, scale=alt.Scale(scheme="set1")) if is_bool_output else alt.Color(output_col, title=output_col),
                 tooltip=input_cols + [output_col, "split"],
             )
         )
     else:
-        x_col = input_cols[0]
+        temp_col, dpa_col = input_cols[:2]
         chart = (
             alt.Chart(all_df)
-            .mark_circle(size=70, opacity=0.8)
+            .mark_point(filled=True, size=80, opacity=0.85)
             .encode(
-                x=alt.X(x_col, title=x_col),
-                y=alt.Y(output_col, title=output_col),
-                color=alt.Color("split", title="split"),
+                x=alt.X(temp_col, title=temp_col),
+                y=alt.Y(dpa_col, title=dpa_col),
+                color=alt.Color(f"{output_col}:N", title=output_col, scale=alt.Scale(scheme="set1")) if is_bool_output else alt.Color(output_col, title=output_col, scale=alt.Scale(scheme="viridis")),
+                shape=alt.Shape("split", title="split"),
                 tooltip=input_cols + [output_col, "split"],
             )
         )
@@ -179,6 +201,7 @@ st.set_page_config(
 )
 
 ui_components.app_header()
+_ensure_precomputed_sweeps()
 
 tab1, tab2, tab3 = st.tabs([
     "Model 1: Temperature",
@@ -204,15 +227,6 @@ with tab1:
         "and randomly hold out 20% for validation."
     )
 
-    if st.button("Run temperature sweep"):
-        train_inputs, val_inputs, train_outputs, val_outputs = run_temperature_sweep()
-        st.session_state["temp_sweep"] = {
-            "train_inputs": train_inputs,
-            "val_inputs": val_inputs,
-            "train_outputs": train_outputs,
-            "val_outputs": val_outputs,
-        }
-
     _render_sweep_results("temperature", "temp_sweep")
 
 with tab2:
@@ -225,7 +239,7 @@ with tab2:
     geom = irr_model.get_default_geometry()
     irr_unc = irr_model.get_geometry_uncertainties()
     ui_components.geometry_expander("Fixed shielding / exposure parameters", geom, irr_unc)
-    st.caption("Enter flux in units of ×1e18 n/m²/s; parameter uncertainties are applied independently per point.")
+    st.caption("Enter flux in units of ×1e18 n/m²/s; parameter uncertainties are applied independently per point with an epistemic multiplier per sample.")
 
     st.markdown("### 🔧 Sweep setup")
     st.write(
@@ -233,42 +247,24 @@ with tab2:
         "with perturbed shielding/geometric factors, and randomly hold out 20% for validation."
     )
 
-    if st.button("Run irradiation sweep"):
-        train_inputs, val_inputs, train_outputs, val_outputs = run_irradiation_sweep()
-        st.session_state["irr_sweep"] = {
-            "train_inputs": train_inputs,
-            "val_inputs": val_inputs,
-            "train_outputs": train_outputs,
-            "val_outputs": val_outputs,
-        }
-
     _render_sweep_results("irradiation", "irr_sweep")
 
 with tab3:
     ui_components.model_summary_box(
         "Model 3: Yield Strength",
-        "Maps temperature and dpa to yield strength for EUROFER first-wall backing, representing degradation "
-        "of mechanical properties under thermal and irradiation loading with variability from material uncertainties."
+        "Classifies failure (yield strength below allowable) for EUROFER first-wall backing as a function of temperature and dpa, "
+        "with variability from material uncertainties plus epistemic factors."
     )
 
     geom = ys_model.get_default_geometry()
     ys_unc = ys_model.get_geometry_uncertainties()
     ui_components.geometry_expander("Fixed material / strain-rate parameters", geom, ys_unc)
-    st.caption("Material property uncertainties are applied as independent Gaussian perturbations at each sweep point.")
+    st.caption("Material property uncertainties are applied as independent Gaussian perturbations at each sweep point with an epistemic multiplier per sample.")
 
     st.markdown("### 🔧 Sweep setup")
     st.write(
         f"Create a meshgrid across temperature 300 to 1200 K and damage 0 to 5 dpa (~{TARGET_POINTS} points total), "
         "sample yield strength with noise, and randomly hold out 20% for validation."
     )
-
-    if st.button("Run yield strength sweep"):
-        train_inputs, val_inputs, train_outputs, val_outputs = run_yield_strength_sweep()
-        st.session_state["ys_sweep"] = {
-            "train_inputs": train_inputs,
-            "val_inputs": val_inputs,
-            "train_outputs": train_outputs,
-            "val_outputs": val_outputs,
-        }
 
     _render_sweep_results("yield_strength", "ys_sweep")

@@ -20,6 +20,16 @@ def get_geometry_uncertainties():
         "T_ref": 0.02,
     }
 
+
+def get_epistemic_fraction():
+    # Multiplicative epistemic uncertainty per sample (e.g., model bias)
+    return 0.08
+
+
+def get_failure_threshold():
+    # Allowable yield strength (MPa) below which we deem failure
+    return 350.0
+
 def evaluate(temperature, dpa, geom=None):
     if geom is None:
         geom = get_default_geometry()
@@ -54,8 +64,9 @@ def sample_model(inputs, n_samples=1, geom=None, rng=None):
     dpa = np.atleast_1d(dpa)
     n_points = T.shape[0]
     uncertainties = get_geometry_uncertainties()
+    epistemic_frac = get_epistemic_fraction()
 
-    all_samples = np.empty((n_points, n_samples))
+    all_samples = np.empty((n_points, n_samples), dtype=bool)
     for i in range(n_samples):
         perturbed = {}
         for key, val in geom.items():
@@ -63,5 +74,7 @@ def sample_model(inputs, n_samples=1, geom=None, rng=None):
                 perturbed[key] = val * (1.0 + rng.normal(0.0, uncertainties[key], size=n_points))
             else:
                 perturbed[key] = val
-        all_samples[:, i] = evaluate(T, dpa, geom=perturbed)
+        epistemic_factor = 1.0 + rng.normal(0.0, epistemic_frac)
+        sigma = evaluate(T, dpa, geom=perturbed) * epistemic_factor
+        all_samples[:, i] = sigma < get_failure_threshold()
     return all_samples
