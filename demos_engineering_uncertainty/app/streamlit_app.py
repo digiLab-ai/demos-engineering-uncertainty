@@ -183,7 +183,7 @@ def _render_sweep_results(label_prefix, state_key):
 
         chart = (
             alt.Chart(all_df)
-            .mark_circle(size=70, opacity=0.8)
+            .mark_point(filled=True, size=80, opacity=0.85)
             .encode(
                 x=alt.X(x_col, title=x_col),
                 y=alt.Y(output_col, title=output_col),
