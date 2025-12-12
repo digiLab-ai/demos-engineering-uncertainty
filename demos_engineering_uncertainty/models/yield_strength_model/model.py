@@ -34,10 +34,10 @@ def get_failure_threshold():
     # Allowable yield strength (MPa) below which we deem failure
     return FAILURE_THRESHOLD
 
-def evaluate(temperature, dpa, geom=None):
+def evaluate(T, dpa, geom=None):
     if geom is None:
         geom = get_default_geometry()
-    temperature = np.asarray(temperature, dtype=float)
+    T = np.asarray(T, dtype=float)
     dpa = np.asarray(dpa, dtype=float)
 
     sigma_0 = geom["sigma_0"]
@@ -45,7 +45,7 @@ def evaluate(temperature, dpa, geom=None):
     a_T = geom["a_T"]
     a_dpa = geom["a_dpa"]
 
-    temp_factor = 1.0 - a_T * (temperature - T_ref)
+    temp_factor = 1.0 - a_T * (T - T_ref)
     damage_factor = 1.0 - a_dpa * dpa
 
     sigma_base = sigma_0 * temp_factor * damage_factor
@@ -62,7 +62,7 @@ def sample_model(inputs, n_samples=1, geom=None, rng=None):
     if rng is None:
         rng = np.random.default_rng()
 
-    T = np.asarray(inputs["temperature"], dtype=float)
+    T = np.asarray(inputs["T"], dtype=float)
     dpa = np.asarray(inputs["dpa"], dtype=float)
     T = np.atleast_1d(T)
     dpa = np.atleast_1d(dpa)

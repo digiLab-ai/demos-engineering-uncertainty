@@ -23,14 +23,14 @@ def get_geometry_uncertainties():
         "thickness": 0.05,
     }
 
-def evaluate(q_peak, geom=None):
+def evaluate(q, geom=None):
     if geom is None:
         geom = get_default_geometry()
-    q_peak = np.asarray(q_peak, dtype=float)
+    q = np.asarray(q, dtype=float)
     h = geom["cooling_coefficient"]
     T_cool = geom["sink_temperature"]
-    T_peak = T_cool + q_peak / h
-    return T_peak
+    T = T_cool + q / h
+    return T
 
 
 def _perturb_geom(geom, uncertainties, n_points, rng):
@@ -48,13 +48,13 @@ def sample_model(inputs, n_samples=1, geom=None, rng=None):
     if rng is None:
         rng = np.random.default_rng()
 
-    q_peak = np.asarray(inputs["q_peak"], dtype=float)
-    q_peak = np.atleast_1d(q_peak)
-    n_points = q_peak.shape[0]
+    q = np.asarray(inputs["q"], dtype=float)
+    q = np.atleast_1d(q)
+    n_points = q.shape[0]
     uncertainties = get_geometry_uncertainties()
 
     all_samples = np.empty((n_points, n_samples))
     for i in range(n_samples):
         perturbed = _perturb_geom(geom, uncertainties, n_points, rng)
-        all_samples[:, i] = evaluate(q_peak, geom=perturbed)
+        all_samples[:, i] = evaluate(q, geom=perturbed)
     return all_samples

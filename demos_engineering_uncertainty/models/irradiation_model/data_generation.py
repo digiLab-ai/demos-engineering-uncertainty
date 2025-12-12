@@ -12,11 +12,11 @@ def generate_datasets(output_root: str = "data/irradiation", n_train: int = 200,
     flux_train = rng.uniform(0.0, 5.0, size=n_train)
     flux_val = rng.uniform(0.0, 5.0, size=n_val)
 
-    train_inputs = pd.DataFrame({"flux_avg": flux_train})
-    val_inputs = pd.DataFrame({"flux_avg": flux_val})
+    train_inputs = pd.DataFrame({"phi": flux_train})
+    val_inputs = pd.DataFrame({"phi": flux_val})
 
-    dpa_train = model.sample_model({"flux_avg": flux_train}, n_samples=1, rng=rng)[:, 0]
-    dpa_val = model.sample_model({"flux_avg": flux_val}, n_samples=1, rng=rng)[:, 0]
+    dpa_train = model.sample_model({"phi": flux_train}, n_samples=1, rng=rng)[:, 0]
+    dpa_val = model.sample_model({"phi": flux_val}, n_samples=1, rng=rng)[:, 0]
 
     train_outputs = pd.DataFrame({"dpa_peak": dpa_train})
     val_outputs = pd.DataFrame({"dpa_peak": dpa_val})

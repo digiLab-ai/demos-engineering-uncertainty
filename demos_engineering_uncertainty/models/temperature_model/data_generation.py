@@ -18,11 +18,11 @@ def generate_datasets(output_root: str = "data/temperature", n_train: int = 200,
     q_train = sample_with_gap(n_train)
     q_val = sample_with_gap(n_val)
 
-    train_inputs = pd.DataFrame({"q_peak": q_train})
-    val_inputs = pd.DataFrame({"q_peak": q_val})
+    train_inputs = pd.DataFrame({"q": q_train})
+    val_inputs = pd.DataFrame({"q": q_val})
 
-    T_train = model.sample_model({"q_peak": q_train}, n_samples=1, rng=rng)[:, 0]
-    T_val = model.sample_model({"q_peak": q_val}, n_samples=1, rng=rng)[:, 0]
+    T_train = model.sample_model({"q": q_train}, n_samples=1, rng=rng)[:, 0]
+    T_val = model.sample_model({"q": q_val}, n_samples=1, rng=rng)[:, 0]
 
     train_outputs = pd.DataFrame({"T_peak": T_train})
     val_outputs = pd.DataFrame({"T_peak": T_val})

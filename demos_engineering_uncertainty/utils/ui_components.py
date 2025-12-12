@@ -34,6 +34,13 @@ def geometry_expander(title: str, geom: dict, uncertainties: Optional[Dict] = No
         df = pd.DataFrame(data)
         st.table(df)
 
+
+def model_parameters_expander(title: str, parameters: list[dict]):
+    """Render a parameter table with name, unit, and description."""
+    with st.expander(title):
+        df = pd.DataFrame(parameters)
+        st.table(df)
+
 def data_section(model_name: str, base_path: str):
     st.markdown("### 📥 Data (train / validation)")
     base = Path(base_path)

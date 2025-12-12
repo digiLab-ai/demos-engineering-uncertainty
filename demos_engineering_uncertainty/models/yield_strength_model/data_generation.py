@@ -16,16 +16,16 @@ def generate_datasets(output_root: str = "data/yield_strength", n_train: int = 6
     dpa_val = rng.uniform(0.0, 5.0, size=n_val)
 
     train_inputs = pd.DataFrame({
-        "temperature": T_train,
+        "T": T_train,
         "dpa": dpa_train
     })
     val_inputs = pd.DataFrame({
-        "temperature": T_val,
+        "T": T_val,
         "dpa": dpa_val
     })
 
-    failure_train = model.sample_model({"temperature": T_train, "dpa": dpa_train}, n_samples=1, rng=rng)[:, 0]
-    failure_val = model.sample_model({"temperature": T_val, "dpa": dpa_val}, n_samples=1, rng=rng)[:, 0]
+    failure_train = model.sample_model({"T": T_train, "dpa": dpa_train}, n_samples=1, rng=rng)[:, 0]
+    failure_val = model.sample_model({"T": T_val, "dpa": dpa_val}, n_samples=1, rng=rng)[:, 0]
 
     train_outputs = pd.DataFrame({"failure": failure_train})
     val_outputs = pd.DataFrame({"failure": failure_val})

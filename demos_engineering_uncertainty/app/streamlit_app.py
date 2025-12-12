@@ -51,10 +51,10 @@ def run_temperature_sweep():
         np.linspace(0.0, 2.0, lower_count, endpoint=False),
         np.linspace(6.0, 10.0, upper_count)
     ])
-    samples = temp_model.sample_model({"q_peak": q_values}, n_samples=1, rng=rng)[:, 0]
+    samples = temp_model.sample_model({"q": q_values}, n_samples=1, rng=rng)[:, 0]
 
-    inputs_df = pd.DataFrame({"q_peak": q_values})
-    outputs_df = pd.DataFrame({"T_peak": samples})
+    inputs_df = pd.DataFrame({"q": q_values})
+    outputs_df = pd.DataFrame({"T": samples})
     train_inputs, val_inputs, train_outputs, val_outputs = _split_train_val(inputs_df, outputs_df, rng)
     return train_inputs, val_inputs, train_outputs, val_outputs
 
@@ -63,10 +63,10 @@ def run_irradiation_sweep():
     rng = np.random.default_rng()
     # flux values expressed in units of "x 1e18 n/m²/s" to keep magnitudes near unity
     flux_values = np.linspace(0.0, 5.0, TARGET_POINTS)
-    samples = irr_model.sample_model({"flux_avg": flux_values}, n_samples=1, rng=rng)[:, 0]
+    samples = irr_model.sample_model({"phi": flux_values}, n_samples=1, rng=rng)[:, 0]
 
-    inputs_df = pd.DataFrame({"flux_avg": flux_values})
-    outputs_df = pd.DataFrame({"dpa_peak": samples})
+    inputs_df = pd.DataFrame({"phi": flux_values})
+    outputs_df = pd.DataFrame({"dpa": samples})
     train_inputs, val_inputs, train_outputs, val_outputs = _split_train_val(inputs_df, outputs_df, rng)
     return train_inputs, val_inputs, train_outputs, val_outputs
 
@@ -93,12 +93,12 @@ def run_yield_strength_sweep():
     T_flat, dpa_flat = sample_with_gap(YIELD_POINTS)
 
     samples = ys_model.sample_model(
-        {"temperature": T_flat, "dpa": dpa_flat},
+        {"T": T_flat, "dpa": dpa_flat},
         n_samples=1,
         rng=rng
     )[:, 0]
 
-    inputs_df = pd.DataFrame({"temperature": T_flat, "dpa": dpa_flat})
+    inputs_df = pd.DataFrame({"T": T_flat, "dpa": dpa_flat})
     outputs_df = pd.DataFrame({"failure": samples.astype(bool)})
     train_inputs, val_inputs, train_outputs, val_outputs = _split_train_val(inputs_df, outputs_df, rng)
     return train_inputs, val_inputs, train_outputs, val_outputs
@@ -238,6 +238,13 @@ with tab1:
         "with uncertainty driven by variation in thermal / geometric properties."
     )
 
+    ui_components.model_parameters_expander(
+        "Model parameters",
+        [
+            {"Parameter": "q", "Unit": "arb.", "Description": "Peak heat flux input"},
+            {"Parameter": "T", "Unit": "K", "Description": "Predicted peak temperature output"},
+        ]
+    )
     geom = temp_model.get_default_geometry()
     temp_unc = temp_model.get_geometry_uncertainties()
     ui_components.geometry_expander("Fixed thermal / geometric parameters", geom, temp_unc)
@@ -245,7 +252,7 @@ with tab1:
 
     st.markdown("### 🔧 Sweep setup")
     st.write(
-        f"Run {TARGET_POINTS} evenly spaced peak heat-flux points from 0 to 10, sample T_peak with perturbed thermal parameters, "
+        f"Run {TARGET_POINTS} evenly spaced peak heat-flux points from 0 to 10, sample T with perturbed thermal parameters, "
         "and randomly hold out 20% for validation."
     )
 
@@ -258,6 +265,13 @@ with tab2:
         "with stochastic variation to mimic transport and spectrum effects."
     )
 
+    ui_components.model_parameters_expander(
+        "Model parameters",
+        [
+            {"Parameter": "phi", "Unit": "×1e18 n/m²/s", "Description": "Average neutron flux input"},
+            {"Parameter": "dpa", "Unit": "dpa", "Description": "Predicted damage output"},
+        ]
+    )
     geom = irr_model.get_default_geometry()
     irr_unc = irr_model.get_geometry_uncertainties()
     ui_components.geometry_expander("Fixed shielding / exposure parameters", geom, irr_unc)
@@ -265,7 +279,7 @@ with tab2:
 
     st.markdown("### 🔧 Sweep setup")
     st.write(
-        f"Sweep {TARGET_POINTS} evenly spaced flux points from 0 to 5 (×1e18 n/m²/s), sample dpa_peak values "
+        f"Sweep {TARGET_POINTS} evenly spaced flux points from 0 to 5 (×1e18 n/m²/s), sample dpa values "
         "with perturbed shielding/geometric factors, and randomly hold out 20% for validation."
     )
 
@@ -278,6 +292,14 @@ with tab3:
         "with variability from material uncertainties plus epistemic factors."
     )
 
+    ui_components.model_parameters_expander(
+        "Model parameters",
+        [
+            {"Parameter": "T", "Unit": "K", "Description": "Temperature input"},
+            {"Parameter": "dpa", "Unit": "dpa", "Description": "Damage input"},
+            {"Parameter": "failure", "Unit": "-", "Description": "Boolean failure label (< threshold yield strength)"},
+        ]
+    )
     geom = ys_model.get_default_geometry()
     ys_unc = ys_model.get_geometry_uncertainties()
     ui_components.geometry_expander("Fixed material / strain-rate parameters", geom, ys_unc)
@@ -286,7 +308,7 @@ with tab3:
     st.markdown("### 🔧 Sweep setup")
     st.write(
         f"Create a meshgrid across temperature 300 to 1200 K and damage 0 to 5 dpa (~{TARGET_POINTS} points total), "
-        "sample yield strength with noise, and randomly hold out 20% for validation."
+        "randomly sample ~20 points with a gap (650–900 K, 2–3 dpa), classify failure, and randomly hold out 20% for validation."
     )
 
     _render_sweep_results("yield_strength", "ys_sweep")

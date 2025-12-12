@@ -24,17 +24,17 @@ def get_epistemic_fraction():
     # Multiplicative epistemic uncertainty applied uniformly across each sample
     return 0.1
 
-def evaluate(flux_avg, geom=None):
+def evaluate(phi, geom=None):
     if geom is None:
         geom = get_default_geometry()
-    # flux_avg is expected in units of "x 1e18 n/m²/s"
-    flux_avg = np.asarray(flux_avg, dtype=float)
+    # phi is expected in units of "x 1e18 n/m²/s"
+    phi = np.asarray(phi, dtype=float)
     f_shield = geom["shield_factor"]
     f_geom = geom["geom_factor"]
     k_dpa = geom["k_dpa"]
     t_exp = geom["exposure_time"]
 
-    flux_physical = flux_avg * FLUX_SCALE
+    flux_physical = phi * FLUX_SCALE
     flux_local = flux_physical * f_shield * f_geom
     dpa_peak = k_dpa * flux_local * t_exp
     return dpa_peak
@@ -55,9 +55,9 @@ def sample_model(inputs, n_samples=1, geom=None, rng=None):
     if rng is None:
         rng = np.random.default_rng()
 
-    flux_avg = np.asarray(inputs["flux_avg"], dtype=float)
-    flux_avg = np.atleast_1d(flux_avg)
-    n_points = flux_avg.shape[0]
+    phi = np.asarray(inputs["phi"], dtype=float)
+    phi = np.atleast_1d(phi)
+    n_points = phi.shape[0]
     uncertainties = get_geometry_uncertainties()
     epistemic_frac = get_epistemic_fraction()
 
@@ -65,5 +65,5 @@ def sample_model(inputs, n_samples=1, geom=None, rng=None):
     for i in range(n_samples):
         perturbed = _perturb_geom(geom, uncertainties, n_points, rng)
         epistemic_factor = 1.0 + rng.normal(0.0, epistemic_frac)
-        all_samples[:, i] = evaluate(flux_avg, geom=perturbed) * epistemic_factor
+        all_samples[:, i] = evaluate(phi, geom=perturbed) * epistemic_factor
     return all_samples
