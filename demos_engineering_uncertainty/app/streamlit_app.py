@@ -12,13 +12,14 @@ import numpy as np
 import pandas as pd
 import altair as alt
 
+from app.config import branding
 from utils import ui_components
 from models.temperature_model import model as temp_model
 from models.irradiation_model import model as irr_model
 from models.yield_strength_model import model as ys_model
 
 TARGET_POINTS = 20
-YIELD_POINTS = 9
+YIELD_POINTS = 20
 TRAIN_FRACTION = 0.8
 
 
@@ -42,14 +43,6 @@ def _split_train_val(inputs_df, outputs_df, rng):
     return train_inputs, val_inputs, train_outputs, val_outputs
 
 
-def _write_dataset(output_root, train_inputs, val_inputs, train_outputs, val_outputs):
-    output_root.mkdir(parents=True, exist_ok=True)
-    train_inputs.to_csv(output_root / "train_inputs.csv", index=False)
-    val_inputs.to_csv(output_root / "val_inputs.csv", index=False)
-    train_outputs.to_csv(output_root / "train_outputs.csv", index=False)
-    val_outputs.to_csv(output_root / "val_outputs.csv", index=False)
-
-
 def run_temperature_sweep():
     rng = np.random.default_rng()
     lower_count = TARGET_POINTS // 2
@@ -63,7 +56,6 @@ def run_temperature_sweep():
     inputs_df = pd.DataFrame({"q_peak": q_values})
     outputs_df = pd.DataFrame({"T_peak": samples})
     train_inputs, val_inputs, train_outputs, val_outputs = _split_train_val(inputs_df, outputs_df, rng)
-    _write_dataset(ROOT / "data" / "temperature", train_inputs, val_inputs, train_outputs, val_outputs)
     return train_inputs, val_inputs, train_outputs, val_outputs
 
 
@@ -76,21 +68,30 @@ def run_irradiation_sweep():
     inputs_df = pd.DataFrame({"flux_avg": flux_values})
     outputs_df = pd.DataFrame({"dpa_peak": samples})
     train_inputs, val_inputs, train_outputs, val_outputs = _split_train_val(inputs_df, outputs_df, rng)
-    _write_dataset(ROOT / "data" / "irradiation", train_inputs, val_inputs, train_outputs, val_outputs)
     return train_inputs, val_inputs, train_outputs, val_outputs
 
 
 def run_yield_strength_sweep():
     rng = np.random.default_rng()
-    n_temp = int(np.ceil(np.sqrt(YIELD_POINTS)))
-    n_dpa = int(np.ceil(YIELD_POINTS / n_temp))
 
-    temp_values = np.linspace(300.0, 1200.0, n_temp)
-    dpa_values = np.linspace(0.0, 5.0, n_dpa)
-    T_grid, dpa_grid = np.meshgrid(temp_values, dpa_values, indexing="ij")
+    def sample_with_gap(n_points):
+        temps = []
+        dpas = []
+        while len(temps) < n_points:
+            T_batch = rng.uniform(300.0, 1200.0, size=n_points)
+            dpa_batch = rng.uniform(0.0, 5.0, size=n_points)
+            # Exclude a mid-range gap to represent epistemic uncertainty
+            mask_gap = (T_batch >= 650.0) & (T_batch <= 900.0) & (dpa_batch >= 2.0) & (dpa_batch <= 3.0)
+            keep_idx = np.where(~mask_gap)[0]
+            for idx in keep_idx:
+                temps.append(T_batch[idx])
+                dpas.append(dpa_batch[idx])
+                if len(temps) >= n_points:
+                    break
+        return np.array(temps[:n_points]), np.array(dpas[:n_points])
 
-    T_flat = T_grid.ravel()
-    dpa_flat = dpa_grid.ravel()
+    T_flat, dpa_flat = sample_with_gap(YIELD_POINTS)
+
     samples = ys_model.sample_model(
         {"temperature": T_flat, "dpa": dpa_flat},
         n_samples=1,
@@ -100,7 +101,6 @@ def run_yield_strength_sweep():
     inputs_df = pd.DataFrame({"temperature": T_flat, "dpa": dpa_flat})
     outputs_df = pd.DataFrame({"failure": samples.astype(bool)})
     train_inputs, val_inputs, train_outputs, val_outputs = _split_train_val(inputs_df, outputs_df, rng)
-    _write_dataset(ROOT / "data" / "yield_strength", train_inputs, val_inputs, train_outputs, val_outputs)
     return train_inputs, val_inputs, train_outputs, val_outputs
 
 
@@ -134,19 +134,20 @@ def _render_sweep_results(label_prefix, state_key):
     val_outputs = sweep["val_outputs"]
 
     st.success(f"Generated {len(train_inputs)} train / {len(val_inputs)} validation samples.")
+    train_df = pd.concat([train_inputs, train_outputs], axis=1)
+    val_df = pd.concat([val_inputs, val_outputs], axis=1)
+
     with st.expander("Train preview"):
-        st.dataframe(pd.concat([train_inputs, train_outputs], axis=1), use_container_width=True)
+        st.dataframe(train_df, use_container_width=True)
     with st.expander("Validation preview"):
-        st.dataframe(pd.concat([val_inputs, val_outputs], axis=1), use_container_width=True)
+        st.dataframe(val_df, use_container_width=True)
 
     st.markdown("#### Download CSVs")
     downloads = {
-        "Train inputs": train_inputs,
-        "Validation inputs": val_inputs,
-        "Train outputs": train_outputs,
-        "Validation outputs": val_outputs,
+        "Train data": train_df,
+        "Validation data": val_df,
     }
-    cols = st.columns(4)
+    cols = st.columns(2)
     for col, (label, df) in zip(cols, downloads.items()):
         with col:
             st.download_button(
@@ -160,35 +161,56 @@ def _render_sweep_results(label_prefix, state_key):
     st.markdown("#### Scatter of generated data")
     input_cols = list(train_inputs.columns)
     output_col = list(train_outputs.columns)[0]
-    train_df = pd.concat([train_inputs, train_outputs], axis=1)
     train_df["split"] = "train"
-    val_df = pd.concat([val_inputs, val_outputs], axis=1)
     val_df["split"] = "validation"
     all_df = pd.concat([train_df, val_df], ignore_index=True)
     is_bool_output = pd.api.types.is_bool_dtype(all_df[output_col])
+    is_yield_model = label_prefix == "yield_strength"
+    shape_scale = alt.Scale(domain=["train", "validation"], range=["circle", "square"])
 
     if len(input_cols) == 1:
         x_col = input_cols[0]
+        if is_yield_model:
+            color_enc = alt.Color(
+                output_col,
+                title=output_col,
+                scale=alt.Scale(scheme="viridis")
+            )
+        elif is_bool_output:
+            color_enc = alt.value(branding.INDIGO)
+        else:
+            color_enc = alt.value(branding.INDIGO)
+
         chart = (
             alt.Chart(all_df)
             .mark_circle(size=70, opacity=0.8)
             .encode(
                 x=alt.X(x_col, title=x_col),
                 y=alt.Y(output_col, title=output_col),
-                color=alt.Color(f"{output_col}:N", title=output_col, scale=alt.Scale(scheme="set1")) if is_bool_output else alt.Color(output_col, title=output_col),
+                color=color_enc,
+                shape=alt.Shape("split", title="split", scale=shape_scale),
                 tooltip=input_cols + [output_col, "split"],
             )
         )
     else:
         temp_col, dpa_col = input_cols[:2]
+        if is_yield_model:
+            color_enc = alt.Color(
+                output_col,
+                title=output_col,
+                scale=alt.Scale(scheme="viridis")
+            )
+        else:
+            color_enc = alt.value(branding.INDIGO)
+
         chart = (
             alt.Chart(all_df)
             .mark_point(filled=True, size=80, opacity=0.85)
             .encode(
                 x=alt.X(temp_col, title=temp_col),
                 y=alt.Y(dpa_col, title=dpa_col),
-                color=alt.Color(f"{output_col}:N", title=output_col, scale=alt.Scale(scheme="set1")) if is_bool_output else alt.Color(output_col, title=output_col, scale=alt.Scale(scheme="viridis")),
-                shape=alt.Shape("split", title="split"),
+                color=color_enc,
+                shape=alt.Shape("split", title="split", scale=shape_scale),
                 tooltip=input_cols + [output_col, "split"],
             )
         )
@@ -204,14 +226,14 @@ ui_components.app_header()
 _ensure_precomputed_sweeps()
 
 tab1, tab2, tab3 = st.tabs([
-    "Model 1: Temperature",
-    "Model 2: Irradiation",
-    "Model 3: Yield Strength"
+    "Thermal model",
+    "Neutronics model",
+    "Failure model"
 ])
 
 with tab1:
     ui_components.model_summary_box(
-        "Model 1: Temperature",
+        "Thermal model",
         "Maps peak heat flux (e.g. ELM peak in space and time) to peak temperature, "
         "with uncertainty driven by variation in thermal / geometric properties."
     )
@@ -231,7 +253,7 @@ with tab1:
 
 with tab2:
     ui_components.model_summary_box(
-        "Model 2: Irradiation",
+        "Neutronics model",
         "Maps average neutron flux (entered as multiples of 1e18 n/m²/s) to peak dpa at the component, incorporating shielding and geometric factors "
         "with stochastic variation to mimic transport and spectrum effects."
     )
@@ -251,7 +273,7 @@ with tab2:
 
 with tab3:
     ui_components.model_summary_box(
-        "Model 3: Yield Strength",
+        "Failure model",
         "Classifies failure (yield strength below allowable) for EUROFER first-wall backing as a function of temperature and dpa, "
         "with variability from material uncertainties plus epistemic factors."
     )

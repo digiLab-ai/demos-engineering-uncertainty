@@ -1,5 +1,8 @@
 import numpy as np
 
+FAILURE_THRESHOLD = 350.0  # MPa allowable yield strength
+
+
 def get_default_geometry():
     return {
         "material": "EUROFER first-wall backing",
@@ -8,6 +11,7 @@ def get_default_geometry():
         "T_ref": 300.0,         # K
         "a_T": 1.2e-3,          # per K
         "a_dpa": 0.06,          # per dpa
+        "failure_threshold": FAILURE_THRESHOLD,  # MPa
     }
 
 
@@ -28,7 +32,7 @@ def get_epistemic_fraction():
 
 def get_failure_threshold():
     # Allowable yield strength (MPa) below which we deem failure
-    return 350.0
+    return FAILURE_THRESHOLD
 
 def evaluate(temperature, dpa, geom=None):
     if geom is None:
