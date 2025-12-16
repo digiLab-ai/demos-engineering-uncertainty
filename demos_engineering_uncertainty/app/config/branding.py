@@ -6,8 +6,9 @@ PURPLE = "#D0BAD2"
 FOREST_GREEN = "#8FBFBB"
 AQUAMARINE = "#C0F1EC"
 
-APP_TITLE = "Fusion Materials Uncertainty Demo"
-APP_TAGLINE = "Thermal, irradiation, and yield strength models with uncertainty propagation."
+APP_TITLE = "Fusion Materials Uncertainty Propagation Demo"
+APP_TAGLINE = "Connected thermal, neutronics, and breaking stress models."
 
 # Placeholder path for company logo (user can replace this file)
-LOGO_PATH = "app/assets/company_logo_placeholder.png"
+# Path is relative to the repo root. Default points to the packaged asset.
+LOGO_PATH = "demos_engineering_uncertainty/assets/digilab.png"

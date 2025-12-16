@@ -130,7 +130,7 @@ def _render_sweep_results(label_prefix, state_key):
     train_outputs = sweep["train_outputs"]
     val_outputs = sweep["val_outputs"]
 
-    st.success(f"Generated {len(train_inputs)} train / {len(val_inputs)} validation samples.")
+    # st.success(f"Generated {len(train_inputs)} train / {len(val_inputs)} validation samples.")
     train_df = pd.concat([train_inputs, train_outputs], axis=1)
     val_df = pd.concat([val_inputs, val_outputs], axis=1)
 
@@ -155,7 +155,7 @@ def _render_sweep_results(label_prefix, state_key):
                 key=f"{state_key}_{label.replace(' ', '_').lower()}",
             )
 
-    st.markdown("#### Scatter of generated data")
+    st.markdown("#### Scatter of available data")
     input_cols = list(train_inputs.columns)
     output_col = list(train_outputs.columns)[0]
     train_df["split"] = "train"
@@ -216,7 +216,7 @@ def _render_sweep_results(label_prefix, state_key):
     st.altair_chart(chart, use_container_width=True)
 
 st.set_page_config(
-    page_title="Fusion Materials Uncertainty Demo",
+    page_title="Fusion Materials Uncertainty Propagation Demo",
     layout="wide"
 )
 
@@ -232,35 +232,39 @@ tab1, tab2, tab3 = st.tabs([
 with tab1:
     ui_components.model_summary_box(
         "Thermal model",
-        "Maps peak heat flux (e.g. ELM peak in space and time) to peak temperature, "
-        "with uncertainty driven by variation in thermal / geometric properties."
+        "",
+        # "Maps peak heat flux (e.g. ELM peak in space and time) to peak temperature, "
+        # "with uncertainty driven by variation in thermal / geometric properties.",
+        explainer_path=ROOT / "assets" / "ThermalExplainer.png"
     )
 
     ui_components.model_parameters_expander(
         "Model parameters",
         [
-            {"Parameter": "q", "Unit": "arb.", "Description": "Peak heat flux input"},
+            {"Parameter": "q", "Unit": "MW/m²", "Description": "Peak heat flux input"},
             {"Parameter": "T", "Unit": "K", "Description": "Predicted peak temperature output"},
         ]
     )
     geom = temp_model.get_default_geometry()
     temp_unc = temp_model.get_geometry_uncertainties()
     ui_components.geometry_expander("Fixed thermal / geometric parameters", geom, temp_unc)
-    st.caption("Parameter uncertainties are applied as independent Gaussian perturbations at each sweep point.")
+    # st.caption("Parameter uncertainties are applied as independent Gaussian perturbations at each sweep point.")
 
-    st.markdown("### 🔧 Sweep setup")
-    st.write(
-        f"Run {TARGET_POINTS} evenly spaced peak heat-flux points from 0 to 10, sample T with perturbed thermal parameters, "
-        "and randomly hold out 20% for validation."
-    )
+    # st.markdown("### 🔧 Sweep setup")
+    # st.write(
+    #     f"Run {TARGET_POINTS} evenly spaced peak heat-flux points from 0 to 10, sample T with perturbed thermal parameters, "
+    #     "and randomly hold out 20% for validation."
+    # )
 
     _render_sweep_results("thermal", "temp_sweep")
 
 with tab2:
     ui_components.model_summary_box(
         "Neutronics model",
-        "Maps average neutron flux (entered as multiples of 1e18 n/m²/s) to peak dpa at the component using an exponential flux response, "
-        "incorporating shielding and geometric factors with stochastic variation to mimic transport and spectrum effects."
+        "",
+        # "Maps average neutron flux (entered as multiples of 1e18 n/m²/s) to peak dpa at the component using an exponential flux response, "
+        # "incorporating shielding and geometric factors with stochastic variation to mimic transport and spectrum effects.",
+        explainer_path=ROOT / "assets" / "NeutronicsExplainer.png"
     )
 
     ui_components.model_parameters_expander(
@@ -273,20 +277,22 @@ with tab2:
     geom = neutronics_model.get_default_geometry()
     irr_unc = neutronics_model.get_geometry_uncertainties()
     ui_components.geometry_expander("Fixed shielding / exposure parameters", geom, irr_unc)
-    st.caption("Enter flux in units of ×1e18 n/m²/s; parameter uncertainties are applied independently per point with an epistemic multiplier per sample.")
+    # st.caption("Enter flux in units of ×1e18 n/m²/s; parameter uncertainties are applied independently per point with an epistemic multiplier per sample.")
 
-    st.markdown("### 🔧 Sweep setup")
-    st.write(
-        f"Sweep {IRR_POINTS} evenly spaced flux points from 0 to 5 (×1e18 n/m²/s), sample dpa values "
-        "with perturbed shielding/geometric factors, and randomly hold out 20% for validation."
-    )
+    # st.markdown("### 🔧 Sweep setup")
+    # st.write(
+    #     f"Sweep {IRR_POINTS} evenly spaced flux points from 0 to 5 (×1e18 n/m²/s), sample dpa values "
+    #     "with perturbed shielding/geometric factors, and randomly hold out 20% for validation."
+    # )
 
     _render_sweep_results("neutronics", "neutronics_sweep")
 
 with tab3:
     ui_components.model_summary_box(
         "Breaking stress model",
-        "Predicts breaking stress (MPa) for EUROFER first-wall backing, decreasing with temperature and neutron damage."
+        "",
+        # "Experiments predict breaking stress (MPa) for EUROFER first-wall backing.",
+        explainer_path=ROOT / "assets" / "FailureExplainer.png"
     )
 
     ui_components.model_parameters_expander(
@@ -300,12 +306,12 @@ with tab3:
     geom = ys_model.get_default_geometry()
     ys_unc = ys_model.get_geometry_uncertainties()
     ui_components.geometry_expander("Fixed material / strain-rate parameters", geom, ys_unc)
-    st.caption("Material property uncertainties are applied as independent Gaussian perturbations at each sweep point with an epistemic multiplier per sample.")
+    # st.caption("Material property uncertainties are applied as independent Gaussian perturbations at each sweep point with an epistemic multiplier per sample.")
 
-    st.markdown("### 🔧 Sweep setup")
-    st.write(
-        f"Randomly sample ~{YIELD_POINTS} points over temperature 290–320 K and damage 0–0.08 dpa, "
-        "predict breaking stress, and randomly hold out 20% for validation."
-    )
+    # st.markdown("### 🔧 Sweep setup")
+    # st.write(
+    #     f"Randomly sample ~{YIELD_POINTS} points over temperature 290–320 K and damage 0–0.08 dpa, "
+    #     "predict breaking stress, and randomly hold out 20% for validation."
+    # )
 
     _render_sweep_results("breaking_stress", "ys_sweep")

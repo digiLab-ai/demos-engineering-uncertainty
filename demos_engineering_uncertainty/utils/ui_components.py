@@ -4,21 +4,49 @@ import pandas as pd
 from pathlib import Path
 from typing import Optional, Dict
 
+
+def _resolve_logo_path() -> Path:
+    raw = Path(branding.LOGO_PATH)
+    if raw.is_absolute():
+        return raw
+
+    base_repo = Path(__file__).resolve().parents[2]
+    base_pkg = Path(__file__).resolve().parents[1]
+    candidate_repo = base_repo / raw
+    candidate_pkg = base_pkg / raw
+    if candidate_repo.exists():
+        return candidate_repo
+    if candidate_pkg.exists():
+        return candidate_pkg
+    return candidate_repo  # fallback for error messaging
+
 def app_header():
     col_logo, col_title = st.columns([1, 4])
     with col_logo:
-        st.markdown("**Company Logo**")
-        st.caption("Drop your logo file into `app/assets` and update `LOGO_PATH` in `branding.py`.")
+        logo_path = _resolve_logo_path()
+        if logo_path.exists():
+            st.image(str(logo_path), use_container_width=True)
+        else:
+            st.warning(f"Logo not found at {logo_path}. Update branding.LOGO_PATH.")
     with col_title:
         st.markdown(f"### {branding.APP_TITLE}")
         st.caption(branding.APP_TAGLINE)
         st.markdown("---")
 
-def model_summary_box(title: str, description: str):
+def model_summary_box(title: str, description: str, explainer_path: Optional[str | Path] = None):
     st.subheader(title)
     st.write(description)
-    with st.expander("📊 Explanatory graphic placeholder"):
-        st.info("Insert a diagram or figure here to explain where the data comes from (e.g. experiment or complex simulation).")
+    with st.expander("📊 Explanatory graphic"):
+        if explainer_path:
+            path = Path(explainer_path)
+            if not path.is_absolute():
+                path = Path(__file__).resolve().parents[2] / path
+            if path.exists():
+                st.image(str(path), use_container_width=True)
+            else:
+                st.warning(f"Graphic not found at {path}.")
+        else:
+            st.info("Insert a diagram or figure here to explain where the data comes from (e.g. experiment or complex simulation).")
 
 def geometry_expander(title: str, geom: dict, uncertainties: Optional[Dict] = None):
     with st.expander(title):
