@@ -3,7 +3,7 @@ import pandas as pd
 from pathlib import Path
 from . import model
 
-def generate_datasets(output_root: str = "data/irradiation", n_train: int = 200, n_val: int = 50, seed: int = 123):
+def generate_datasets(output_root: str = "data/irradiation", n_train: int = 400, n_val: int = 100, seed: int = 123):
     rng = np.random.default_rng(seed)
     output_root = Path(output_root)
     output_root.mkdir(parents=True, exist_ok=True)

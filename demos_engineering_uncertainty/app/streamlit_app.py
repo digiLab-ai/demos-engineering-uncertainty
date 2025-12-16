@@ -15,10 +15,11 @@ import altair as alt
 from app.config import branding
 from utils import ui_components
 from models.temperature_model import model as temp_model
-from models.irradiation_model import model as irr_model
+from models.irradiation_model import model as neutronics_model
 from models.yield_strength_model import model as ys_model
 
 TARGET_POINTS = 20
+IRR_POINTS = 20
 YIELD_POINTS = 20
 TRAIN_FRACTION = 0.8
 
@@ -49,7 +50,7 @@ def run_temperature_sweep():
     upper_count = TARGET_POINTS - lower_count
     q_values = np.concatenate([
         np.linspace(0.0, 2.0, lower_count, endpoint=False),
-        np.linspace(6.0, 10.0, upper_count)
+        np.linspace(7.0, 10.0, upper_count)
     ])
     samples = temp_model.sample_model({"q": q_values}, n_samples=1, rng=rng)[:, 0]
 
@@ -59,11 +60,11 @@ def run_temperature_sweep():
     return train_inputs, val_inputs, train_outputs, val_outputs
 
 
-def run_irradiation_sweep():
+def run_neutronics_sweep():
     rng = np.random.default_rng()
     # flux values expressed in units of "x 1e18 n/m²/s" to keep magnitudes near unity
-    flux_values = np.linspace(0.0, 5.0, TARGET_POINTS)
-    samples = irr_model.sample_model({"phi": flux_values}, n_samples=1, rng=rng)[:, 0]
+    flux_values = np.linspace(0.0, 5.0, IRR_POINTS)
+    samples = neutronics_model.sample_model({"phi": flux_values}, n_samples=1, rng=rng)[:, 0]
 
     inputs_df = pd.DataFrame({"phi": flux_values})
     outputs_df = pd.DataFrame({"dpa": samples})
@@ -74,23 +75,8 @@ def run_irradiation_sweep():
 def run_yield_strength_sweep():
     rng = np.random.default_rng()
 
-    def sample_with_gap(n_points):
-        temps = []
-        dpas = []
-        while len(temps) < n_points:
-            T_batch = rng.uniform(300.0, 1200.0, size=n_points)
-            dpa_batch = rng.uniform(0.0, 5.0, size=n_points)
-            # Exclude a mid-range gap to represent epistemic uncertainty
-            mask_gap = (T_batch >= 650.0) & (T_batch <= 900.0) & (dpa_batch >= 2.0) & (dpa_batch <= 3.0)
-            keep_idx = np.where(~mask_gap)[0]
-            for idx in keep_idx:
-                temps.append(T_batch[idx])
-                dpas.append(dpa_batch[idx])
-                if len(temps) >= n_points:
-                    break
-        return np.array(temps[:n_points]), np.array(dpas[:n_points])
-
-    T_flat, dpa_flat = sample_with_gap(YIELD_POINTS)
+    T_flat = rng.uniform(290.0, 320.0, size=YIELD_POINTS)
+    dpa_flat = rng.uniform(0.0, 0.08, size=YIELD_POINTS)
 
     samples = ys_model.sample_model(
         {"T": T_flat, "dpa": dpa_flat},
@@ -99,7 +85,7 @@ def run_yield_strength_sweep():
     )[:, 0]
 
     inputs_df = pd.DataFrame({"T": T_flat, "dpa": dpa_flat})
-    outputs_df = pd.DataFrame({"failure": samples.astype(bool)})
+    outputs_df = pd.DataFrame({"breaking_stress": samples})
     train_inputs, val_inputs, train_outputs, val_outputs = _split_train_val(inputs_df, outputs_df, rng)
     return train_inputs, val_inputs, train_outputs, val_outputs
 
@@ -117,10 +103,21 @@ def _store_sweep(key, sweep_tuple):
 def _ensure_precomputed_sweeps():
     if "temp_sweep" not in st.session_state:
         _store_sweep("temp_sweep", run_temperature_sweep())
-    if "irr_sweep" not in st.session_state:
-        _store_sweep("irr_sweep", run_irradiation_sweep())
+    if "neutronics_sweep" not in st.session_state:
+        _store_sweep("neutronics_sweep", run_neutronics_sweep())
     if "ys_sweep" not in st.session_state:
         _store_sweep("ys_sweep", run_yield_strength_sweep())
+
+
+def _compute_domain(series: pd.Series, pad_frac: float = 0.05):
+    vmin = float(series.min())
+    vmax = float(series.max())
+    if vmin == vmax:
+        # Avoid zero-width domains
+        return [vmin - 1.0, vmax + 1.0]
+    span = vmax - vmin
+    pad = span * pad_frac
+    return [vmin - pad, vmax + pad]
 
 
 def _render_sweep_results(label_prefix, state_key):
@@ -166,50 +163,51 @@ def _render_sweep_results(label_prefix, state_key):
     all_df = pd.concat([train_df, val_df], ignore_index=True)
     is_bool_output = pd.api.types.is_bool_dtype(all_df[output_col])
     is_yield_model = label_prefix == "yield_strength"
+    split_scale = alt.Scale(domain=["train", "validation"], range=["circle", "square"])
     shape_scale = alt.Scale(domain=["train", "validation"], range=["circle", "square"])
 
     if len(input_cols) == 1:
         x_col = input_cols[0]
-        if is_yield_model:
-            color_enc = alt.Color(
-                output_col,
-                title=output_col,
-                scale=alt.Scale(scheme="viridis")
-            )
-        elif is_bool_output:
-            color_enc = alt.value(branding.INDIGO)
-        else:
-            color_enc = alt.value(branding.INDIGO)
-
         chart = (
             alt.Chart(all_df)
             .mark_point(filled=True, size=80, opacity=0.85)
             .encode(
-                x=alt.X(x_col, title=x_col),
-                y=alt.Y(output_col, title=output_col),
-                color=color_enc,
+                x=alt.X(x_col, title=x_col, scale=alt.Scale(domain=_compute_domain(all_df[x_col]))),
+                y=alt.Y(output_col, title=output_col, scale=alt.Scale(domain=_compute_domain(all_df[output_col]))),
+                color=(
+                    alt.Color(
+                        output_col,
+                        title=output_col,
+                        scale=alt.Scale(range=[branding.INDIGO, branding.KEPPEL, branding.KEY_LIME])
+                    )
+                    if (label_prefix == "breaking_stress" and not is_bool_output)
+                    else alt.Color(f"{output_col}:N", title=output_col, scale=alt.Scale(scheme="set1"))
+                    if is_bool_output
+                    else alt.value(branding.INDIGO)
+                ),
                 shape=alt.Shape("split", title="split", scale=shape_scale),
                 tooltip=input_cols + [output_col, "split"],
             )
         )
     else:
         temp_col, dpa_col = input_cols[:2]
-        if is_yield_model:
-            color_enc = alt.Color(
-                output_col,
-                title=output_col,
-                scale=alt.Scale(scheme="viridis")
-            )
-        else:
-            color_enc = alt.value(branding.INDIGO)
-
         chart = (
             alt.Chart(all_df)
             .mark_point(filled=True, size=80, opacity=0.85)
             .encode(
-                x=alt.X(temp_col, title=temp_col),
-                y=alt.Y(dpa_col, title=dpa_col),
-                color=color_enc,
+                x=alt.X(temp_col, title=temp_col, scale=alt.Scale(domain=_compute_domain(all_df[temp_col]))),
+                y=alt.Y(dpa_col, title=dpa_col, scale=alt.Scale(domain=_compute_domain(all_df[dpa_col]))),
+                color=(
+                    alt.Color(
+                        output_col,
+                        title=output_col,
+                        scale=alt.Scale(range=[branding.INDIGO, branding.KEPPEL, branding.KEY_LIME])
+                    )
+                    if (label_prefix == "breaking_stress" and not is_bool_output)
+                    else alt.Color(f"{output_col}:N", title=output_col, scale=alt.Scale(scheme="set1"))
+                    if is_bool_output
+                    else alt.value(branding.INDIGO)
+                ),
                 shape=alt.Shape("split", title="split", scale=shape_scale),
                 tooltip=input_cols + [output_col, "split"],
             )
@@ -228,7 +226,7 @@ _ensure_precomputed_sweeps()
 tab1, tab2, tab3 = st.tabs([
     "Thermal model",
     "Neutronics model",
-    "Failure model"
+    "Breaking stress model"
 ])
 
 with tab1:
@@ -256,13 +254,13 @@ with tab1:
         "and randomly hold out 20% for validation."
     )
 
-    _render_sweep_results("temperature", "temp_sweep")
+    _render_sweep_results("thermal", "temp_sweep")
 
 with tab2:
     ui_components.model_summary_box(
         "Neutronics model",
-        "Maps average neutron flux (entered as multiples of 1e18 n/m²/s) to peak dpa at the component, incorporating shielding and geometric factors "
-        "with stochastic variation to mimic transport and spectrum effects."
+        "Maps average neutron flux (entered as multiples of 1e18 n/m²/s) to peak dpa at the component using an exponential flux response, "
+        "incorporating shielding and geometric factors with stochastic variation to mimic transport and spectrum effects."
     )
 
     ui_components.model_parameters_expander(
@@ -272,24 +270,23 @@ with tab2:
             {"Parameter": "dpa", "Unit": "dpa", "Description": "Predicted damage output"},
         ]
     )
-    geom = irr_model.get_default_geometry()
-    irr_unc = irr_model.get_geometry_uncertainties()
+    geom = neutronics_model.get_default_geometry()
+    irr_unc = neutronics_model.get_geometry_uncertainties()
     ui_components.geometry_expander("Fixed shielding / exposure parameters", geom, irr_unc)
     st.caption("Enter flux in units of ×1e18 n/m²/s; parameter uncertainties are applied independently per point with an epistemic multiplier per sample.")
 
     st.markdown("### 🔧 Sweep setup")
     st.write(
-        f"Sweep {TARGET_POINTS} evenly spaced flux points from 0 to 5 (×1e18 n/m²/s), sample dpa values "
+        f"Sweep {IRR_POINTS} evenly spaced flux points from 0 to 5 (×1e18 n/m²/s), sample dpa values "
         "with perturbed shielding/geometric factors, and randomly hold out 20% for validation."
     )
 
-    _render_sweep_results("irradiation", "irr_sweep")
+    _render_sweep_results("neutronics", "neutronics_sweep")
 
 with tab3:
     ui_components.model_summary_box(
-        "Failure model",
-        "Classifies failure (yield strength below allowable) for EUROFER first-wall backing as a function of temperature and dpa, "
-        "with variability from material uncertainties plus epistemic factors."
+        "Breaking stress model",
+        "Predicts breaking stress (MPa) for EUROFER first-wall backing, decreasing with temperature and neutron damage."
     )
 
     ui_components.model_parameters_expander(
@@ -297,7 +294,7 @@ with tab3:
         [
             {"Parameter": "T", "Unit": "K", "Description": "Temperature input"},
             {"Parameter": "dpa", "Unit": "dpa", "Description": "Damage input"},
-            {"Parameter": "failure", "Unit": "-", "Description": "Boolean failure label (< threshold yield strength)"},
+            {"Parameter": "breaking_stress", "Unit": "MPa", "Description": "Predicted breaking stress output"},
         ]
     )
     geom = ys_model.get_default_geometry()
@@ -307,8 +304,8 @@ with tab3:
 
     st.markdown("### 🔧 Sweep setup")
     st.write(
-        f"Create a meshgrid across temperature 300 to 1200 K and damage 0 to 5 dpa (~{TARGET_POINTS} points total), "
-        "randomly sample ~20 points with a gap (650–900 K, 2–3 dpa), classify failure, and randomly hold out 20% for validation."
+        f"Randomly sample ~{YIELD_POINTS} points over temperature 290–320 K and damage 0–0.08 dpa, "
+        "predict breaking stress, and randomly hold out 20% for validation."
     )
 
-    _render_sweep_results("yield_strength", "ys_sweep")
+    _render_sweep_results("breaking_stress", "ys_sweep")

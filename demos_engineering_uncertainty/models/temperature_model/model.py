@@ -3,24 +3,26 @@ import numpy as np
 def get_default_geometry():
     """Return fixed geometric / material factors for the temperature model."""
     return {
-        "cooling_coefficient": 20.0,   # arbitrary units
+        "cooling_coefficient": 1., # 20.0,   # arbitrary units
         "sink_temperature": 300.0,     # K
         "thermal_conductivity": 15.0,  # W/(m·K)
         "density": 7800.0,             # kg/m3
         "heat_capacity": 500.0,        # J/(kg·K)
         "thickness": 0.02,             # m
+        "q_buffer_threshold": 3.0,     # arbitrary units; below this, coolant buffers T to sink_temperature
     }
 
 
 def get_geometry_uncertainties():
     """Fractional 1-sigma uncertainties on fixed parameters."""
     return {
-        "cooling_coefficient": 0.05,
-        "sink_temperature": 0.01,
-        "thermal_conductivity": 0.05,
-        "density": 0.02,
-        "heat_capacity": 0.02,
-        "thickness": 0.05,
+        "cooling_coefficient": 0.005,
+        "sink_temperature": 0.0001,
+        "thermal_conductivity": 0.0005,
+        "density": 0.0002,
+        "heat_capacity": 0.0002,
+        "thickness": 0.00005,
+        "q_buffer_threshold": 0.00,
     }
 
 def evaluate(q, geom=None):
@@ -29,7 +31,9 @@ def evaluate(q, geom=None):
     q = np.asarray(q, dtype=float)
     h = geom["cooling_coefficient"]
     T_cool = geom["sink_temperature"]
-    T = T_cool + q / h
+    q_excess = np.maximum(q - geom["q_buffer_threshold"], 0.)
+    q_step = 10. * (q > geom["q_buffer_threshold"])
+    T = T_cool + q_step + q_excess / h
     return T
 
 
