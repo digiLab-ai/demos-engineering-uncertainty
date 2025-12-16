@@ -4,16 +4,16 @@ from pathlib import Path
 from . import model
 
 
-def generate_datasets(output_root: str = "data/yield_strength", n_train: int = 60, n_val: int = 15, seed: int = 999):
+def generate_datasets(output_root: str = "data/yield_strength", n_train: int = 120, n_val: int = 30, seed: int = 999):
     rng = np.random.default_rng(seed)
     output_root = Path(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
 
-    T_train = rng.uniform(300.0, 1200.0, size=n_train)
-    dpa_train = rng.uniform(0.0, 5.0, size=n_train)
+    T_train = rng.uniform(290.0, 320.0, size=n_train)
+    dpa_train = rng.uniform(0.0, 0.08, size=n_train)
 
-    T_val = rng.uniform(300.0, 1200.0, size=n_val)
-    dpa_val = rng.uniform(0.0, 5.0, size=n_val)
+    T_val = rng.uniform(290.0, 320.0, size=n_val)
+    dpa_val = rng.uniform(0.0, 0.08, size=n_val)
 
     train_inputs = pd.DataFrame({
         "T": T_train,
